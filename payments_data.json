@@ -1,0 +1,136 @@
+import json
+
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
+
+TOKEN = "ТУТ_ТВІЙ_НОВИЙ_ТОКЕН"
+
+
+with open("payments_data.json", "r", encoding="utf-8") as file:
+    DATA = json.load(file)
+
+
+def make_keyboard(items, row_size=2):
+    keyboard = []
+    row = []
+
+    for item in items:
+        row.append(item)
+
+        if len(row) == row_size:
+            keyboard.append(row)
+            row = []
+
+    if row:
+        keyboard.append(row)
+
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+
+    keyboard = [["ХОЧУ ОПЛАТИТИ ОПЛАТИ СКАРБОВІ"]]
+
+    await update.message.reply_text(
+        "Привіт 👋\nЯ допоможу підготувати оплату гербового збору.",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    )
+
+
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+
+    if text == "ХОЧУ ОПЛАТИТИ ОПЛАТИ СКАРБОВІ":
+        await update.message.reply_text(
+            "Оберіть воєводство:",
+            reply_markup=make_keyboard(DATA["wojewodztwa"], row_size=2)
+        )
+        return
+
+    if text in DATA["wojewodztwa"]:
+        context.user_data["wojewodztwo"] = text
+
+        payment_labels = [
+            payment["label"]
+            for payment in DATA["payment_types"].values()
+        ]
+
+        await update.message.reply_text(
+            "Оберіть тип оплати:",
+            reply_markup=make_keyboard(payment_labels, row_size=1)
+        )
+        return
+
+    selected_payment = None
+
+    for payment in DATA["payment_types"].values():
+        if payment["label"] == text:
+            selected_payment = payment
+            break
+
+    if selected_payment:
+        woj = context.user_data.get("wojewodztwo")
+
+        office = DATA["offices"].get(
+            woj,
+            {
+                "office": "UZUPEŁNIĆ",
+                "recipient": "UZUPEŁNIĆ",
+                "account": "UZUPEŁNIĆ"
+            }
+        )
+
+        message = f"""
+✅ Дані для оплати
+
+Воєводство:
+{woj}
+
+Ужонд:
+{office["office"]}
+
+Тип оплати:
+{selected_payment["label"]}
+
+Сума:
+{selected_payment["amount"]}
+
+Odbiorca:
+{office["recipient"]}
+
+Numer rachunku:
+{office["account"]}
+
+Tytuł przelewu:
+{selected_payment["title"]}
+
+⚠️ Перед оплатою перевірте реквізити на офіційній сторінці ужонду.
+"""
+
+        await update.message.reply_text(message)
+        return
+
+    await update.message.reply_text(
+        "Натисніть /start, щоб почати спочатку."
+    )
+
+
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+
+    print("Bot works...")
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
