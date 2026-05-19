@@ -1,134 +1,154 @@
-cd ~/oplaty_bot
-nano bot.py%                                                                                                            (base) nikalexa@MacBook-Pro-Veronika ~ % cd ~/oplaty_bot
-(base) nikalexa@MacBook-Pro-Veronika oplaty_bot % nano bot.py
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-  UW PICO 5.09                                              File: bot.py                                                
-
 import os
-import re
-from io import BytesIO
-from datetime import datetime
-
-import pandas as pd
-import requests
-from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
-
-load_dotenv()
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-SHEET_URL = os.getenv("SHEET_URL")
 
-PAYMENT_TREE = {
-    "pobyt_work_question": {
-        "label": "Тимчасове перебування",
-        "children": ["ТАК, по роботі", "НІ, не по роботі"]
-    },
-    "permanent_question": {
-        "label": "Постійне перебування",
-        "children": ["На підставі карти Поляка", "Без карти Поляка"]
-    },
-    "card_print_question": {
-        "label": "Друк карти побиту",
-        "children": ["Карта CUKR", "Karta Pobytu tradycyjna (Nie CUKR)"]
-    },
-    "traditional_card_question": {
-        "label": "Karta Pobytu tradycyjna (Nie CUKR)",
-        "children": ["Повнолітня особа без пільг", "Пільгова оплата"]
-    }
-}
 
-FINAL_PAYMENTS = {
-    "ТАК, по роботі": {
-        "payment_type_id": "pobyt_praca",
-        "label": "Pobyt czasowy i praca",
-        "amount": 440,
-        "title": "Opłata skarbowa za zezwolenie na pobyt czasowy i pracę dla {full_name}, ur. {birth_date}"
-    },
-    "НІ, не по роботі": {
-        "payment_type_id": "pobyt_czasowy",
-        "label": "Pobyt czasowy",
-        "amount": 340,
-        "title": "Opłata skarbowa za zezwolenie na pobyt czasowy dla {full_name}, ur. {birth_date}"
-    },
-    "На підставі карти Поляка": {
-        "payment_type_id": "pobyt_staly_karta_polaka",
-        "label": "Pobyt stały na podstawie Karty Polaka",
-        "amount": 0,
-        "free": True,
-        "title": ""
-    },
-    "Без карти Поляка": {
-        "payment_type_id": "pobyt_staly",
-        "label": "Pobyt stały",
-        "amount": 640,
-        "title": "Opłata skarbowa za zezwolenie na pobyt stały dla {full_name}, ur. {birth_date}"
-    },
-    "Резидент ЄС": {
-        "payment_type_id": "rezydent_ue",
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-^G Get Help         ^O WriteOut         ^R Read File        ^Y Prev Pg          ^K Cut Text         ^C Cur Pos          
-^X Exit             ^J Justify          ^W Where is         ^V Next Pg          ^U UnCut Text       ^T To Spell        
+    keyboard = [
+        ["ХОЧУ ОПЛАТИТИ ОПЛАТИ СКАРБОВІ"]
+    ]
+
+    await update.message.reply_text(
+        "Привіт 👋",
+        reply_markup=ReplyKeyboardMarkup(
+            keyboard,
+            resize_keyboard=True
+        )
+    )
+
+
+async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    text = update.message.text
+
+    if text == "ХОЧУ ОПЛАТИТИ ОПЛАТИ СКАРБОВІ":
+
+        keyboard = [
+            ["Dolnośląskie"],
+            ["Mazowieckie"],
+            ["Małopolskie"],
+            ["Śląskie"]
+        ]
+
+        await update.message.reply_text(
+            "Оберіть воєводство:",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True
+            )
+        )
+
+    elif text == "Dolnośląskie":
+
+        keyboard = [
+            ["Тимчасове перебування"],
+            ["Постійне перебування"],
+            ["Резидент ЄС"],
+            ["Громадянство"],
+            ["Друк карти побиту"],
+            ["Доручення"]
+        ]
+
+        await update.message.reply_text(
+            "За що платимо?",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True
+            )
+        )
+
+    elif text == "Тимчасове перебування":
+
+        keyboard = [
+            ["ТАК, по роботі"],
+            ["НІ, не по роботі"]
+        ]
+
+        await update.message.reply_text(
+            "Чи по роботі?",
+            reply_markup=ReplyKeyboardMarkup(
+                keyboard,
+                resize_keyboard=True
+            )
+        )
+
+    elif text == "ТАК, по роботі":
+
+        await update.message.reply_text(
+            """
+✅ Дані для оплати готові
+
+📌 У полі «ОТРИМУВАЧ»:
+
+Dolnośląski Urząd Wojewódzki
+
+📌 У полі «НОМЕР РАХУНКУ»:
+
+00 0000 0000 0000 0000 0000 0000
+
+📌 У полі «СУМА»:
+
+440 zł
+
+📌 У полі «ПРИЗНАЧЕННЯ ПЛАТЕЖУ»:
+
+Opłata za pobyt czasowy i pracę
+"""
+        )
+
+    elif text == "НІ, не по роботі":
+
+        await update.message.reply_text(
+            """
+✅ Дані для оплати готові
+
+📌 У полі «ОТРИМУВАЧ»:
+
+Dolnośląski Urząd Wojewódzki
+
+📌 У полі «НОМЕР РАХУНКУ»:
+
+00 0000 0000 0000 0000 0000 0000
+
+📌 У полі «СУМА»:
+
+340 zł
+
+📌 У полі «ПРИЗНАЧЕННЯ ПЛАТЕЖУ»:
+
+Opłata za pobyt czasowy
+"""
+        )
+
+
+def main():
+
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    app.add_handler(
+        CommandHandler("start", start)
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT,
+            message_handler
+        )
+    )
+
+    print("Bot works.")
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+    main()
