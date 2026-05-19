@@ -1,4 +1,3 @@
-Last login: Tue May 19 09:16:38 on ttys000
 cd ~/oplaty_bot
 nano bot.py%                                                                                                            (base) nikalexa@MacBook-Pro-Veronika ~ % cd ~/oplaty_bot
 (base) nikalexa@MacBook-Pro-Veronika oplaty_bot % nano bot.py
