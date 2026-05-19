@@ -5,16 +5,102 @@ from datetime import datetime
 
 import pandas as pd
 import requests
+from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
 
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SHEET_URL = os.getenv("SHEET_URL")
 
+PAYMENT_TREE = {
+    "pobyt_work_question": {
+        "label": "Тимчасове перебування",
+        "children": ["ТАК, по роботі", "НІ, не по роботі"]
+    },
+    "permanent_question": {
+        "label": "Постійне перебування",
+        "children": ["На підставі карти Поляка", "Без карти Поляка"]
+    },
+    "card_print_question": {
+        "label": "Друк карти побиту",
+        "children": ["Карта CUKR", "Karta Pobytu tradycyjna (Nie CUKR)"]
+    },
+    "traditional_card_question": {
+        "label": "Karta Pobytu tradycyjna (Nie CUKR)",
+        "children": ["Повнолітня особа без пільг", "Пільгова оплата"]
+    }
+}
+
+FINAL_PAYMENTS = {
+    "ТАК, по роботі": {
+        "payment_type_id": "pobyt_praca",
+        "label": "Pobyt czasowy i praca",
+        "amount": 440,
+        "title": "Opłata skarbowa za zezwolenie na pobyt czasowy i pracę dla {full_name}, ur. {birth_date}"
+    },
+    "НІ, не по роботі": {
+        "payment_type_id": "pobyt_czasowy",
+        "label": "Pobyt czasowy",
+        "amount": 340,
+        "title": "Opłata skarbowa za zezwolenie na pobyt czasowy dla {full_name}, ur. {birth_date}"
+    },
+    "На підставі карти Поляка": {
+        "payment_type_id": "pobyt_staly_karta_polaka",
+        "label": "Pobyt stały na podstawie Karty Polaka",
+        "amount": 0,
+        "free": True,
+        "title": ""
+    },
+    "Без карти Поляка": {
+        "payment_type_id": "pobyt_staly",
+        "label": "Pobyt stały",
+        "amount": 640,
+        "title": "Opłata skarbowa za zezwolenie na pobyt stały dla {full_name}, ur. {birth_date}"
+    },
+    "Резидент ЄС": {
+        "payment_type_id": "rezydent_ue",
+        "label": "Rezydent długoterminowy UE",
+        "amount": 640,
+        "title": "Opłata skarbowa za zezwolenie na pobyt rezydenta długoterminowego UE dla {full_name}, ur. {birth_date}"
+    },
+    "Громадянство": {
+        "payment_type_id": "obywatelstwo",
+        "label": "Uznanie za obywatela polskiego",
+        "amount": 1000,
+        "title": "Opłata za wniosek o uznanie za obywatela polskiego dla {full_name}, ur. {birth_date}"
+    },
+    "Карта CUKR": {
+        "payment_type_id": "karta_cukr",
+        "label": "Karta CUKR",
+        "amount": 100,
+        "title": "Opłata za wydanie karty pobytu CUKR dla {full_name}, ur. {birth_date}"
+    },
+    "Повнолітня особа без пільг": {
+        "payment_type_id": "karta_100",
+        "label": "Karta pobytu tradycyjna 100%",
+        "amount": 100,
+        "title": "Opłata za wydanie karty pobytu dla {full_name}, ur. {birth_date}"
+    },
+    "Пільгова оплата": {
+        "payment_type_id": "karta_50",
+        "label": "Karta pobytu tradycyjna 50%",
+        "amount": 50,
+        "title": "Opłata za wydanie karty pobytu - ulga 50% dla {full_name}, ur. {birth_date}"
+    },
+    "Доручення": {
+        "payment_type_id": "pelnomocnictwo",
+        "label": "Pełnomocnictwo",
+        "amount": 17,
+        "needs_proxy": True,
+        "title": "Opłata skarbowa od pełnomocnictwa: {proxy_name}, sprawa osoby: {full_name}, ur. {birth_date}"
+    }
+}
+
 
 def sheet_export_url(url):
-    match = re.search(r"/d/([^/]+)", url or "")
+    match = re.search(r"/d/([^/]+)", url)
     if match:
         return f"https://docs.google.com/spreadsheets/d/{match.group(1)}/export?format=xlsx"
     return url
@@ -34,77 +120,11 @@ def load_database():
     return {
         "voivodeships": voivodeships,
         "accounts": accounts,
-        "routes": routes,
+        "routes": routes
     }
 
 
 DB = load_database()
-
-
-FINAL_PAYMENTS = {
-    "ТАК, по роботі": {
-        "payment_type_id": "pobyt_praca",
-        "label": "Pobyt czasowy i praca",
-        "amount": 440,
-        "title": "Opłata skarbowa za zezwolenie na pobyt czasowy i pracę dla {full_name}, ur. {birth_date}",
-    },
-    "НІ, не по роботі": {
-        "payment_type_id": "pobyt_czasowy",
-        "label": "Pobyt czasowy",
-        "amount": 340,
-        "title": "Opłata skarbowa za zezwolenie na pobyt czasowy dla {full_name}, ur. {birth_date}",
-    },
-    "На підставі карти Поляка": {
-        "payment_type_id": "pobyt_staly_karta_polaka",
-        "label": "Pobyt stały na podstawie Karty Polaka",
-        "amount": 0,
-        "free": True,
-        "title": "",
-    },
-    "Без карти Поляка": {
-        "payment_type_id": "pobyt_staly",
-        "label": "Pobyt stały",
-        "amount": 640,
-        "title": "Opłata skarbowa za zezwolenie na pobyt stały dla {full_name}, ur. {birth_date}",
-    },
-    "Резидент ЄС": {
-        "payment_type_id": "rezydent_ue",
-        "label": "Rezydent długoterminowy UE",
-        "amount": 640,
-        "title": "Opłata skarbowa za zezwolenie na pobyt rezydenta długoterminowego UE dla {full_name}, ur. {birth_date}",
-    },
-    "Громадянство": {
-        "payment_type_id": "obywatelstwo",
-        "label": "Uznanie za obywatela polskiego",
-        "amount": 1000,
-        "title": "Opłata za wniosek o uznanie za obywatela polskiego dla {full_name}, ur. {birth_date}",
-    },
-    "Карта CUKR": {
-        "payment_type_id": "karta_cukr",
-        "label": "Karta CUKR",
-        "amount": 100,
-        "title": "Opłata za wydanie karty pobytu CUKR dla {full_name}, ur. {birth_date}",
-    },
-    "Повнолітня особа без пільг": {
-        "payment_type_id": "karta_100",
-        "label": "Karta pobytu tradycyjna 100%",
-        "amount": 100,
-        "title": "Opłata za wydanie karty pobytu dla {full_name}, ur. {birth_date}",
-    },
-    "Пільгова оплата": {
-        "payment_type_id": "karta_50",
-        "label": "Karta pobytu tradycyjna 50%",
-        "amount": 50,
-        "title": "Opłata za wydanie karty pobytu - ulga 50% dla {full_name}, ur. {birth_date}",
-    },
-    "Доручення": {
-        "payment_type_id": "pelnomocnictwo",
-        "label": "Pełnomocnictwo",
-        "amount": 17,
-        "needs_proxy": True,
-        "title": "Opłata skarbowa od pełnomocnictwa: {proxy_name}, sprawa osoby: {full_name}, ur. {birth_date}",
-    },
-}
 
 
 def make_keyboard(items, row_size=2):
@@ -112,7 +132,7 @@ def make_keyboard(items, row_size=2):
     row = []
 
     for item in items:
-        row.append(str(item))
+        row.append(item)
         if len(row) == row_size:
             rows.append(row)
             row = []
@@ -122,27 +142,6 @@ def make_keyboard(items, row_size=2):
 
     rows.append(["🔄 Почати спочатку"])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
-
-
-def is_latin_name(name):
-    return re.fullmatch(r"^[A-Za-zÀ-ÿ' -]+$", name.strip()) is not None
-
-
-def validate_birth_date(date_text):
-    try:
-        birth = datetime.strptime(date_text, "%d.%m.%Y")
-        today = datetime.today()
-
-        if birth > today:
-            return False
-
-        age = today.year - birth.year
-        if age > 120:
-            return False
-
-        return True
-    except ValueError:
-        return False
 
 
 def get_voivodeship(name):
@@ -169,6 +168,29 @@ def get_account(account_id):
         return None
     return rows.iloc[0].to_dict()
 
+def is_latin_name(name):
+    pattern = r"^[A-Za-zÀ-ÿ' -]+$"
+    return re.fullmatch(pattern, name.strip()) is not None
+
+
+def validate_birth_date(date_text):
+    try:
+        birth = datetime.strptime(date_text, "%d.%m.%Y")
+        today = datetime.today()
+
+        if birth > today:
+            return False
+
+        age = today.year - birth.year
+
+        if age > 120:
+            return False
+
+        return True
+
+    except ValueError:
+        return False
+
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
@@ -177,8 +199,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Привіт 👋\nЯ допоможу підготувати оплату.",
         reply_markup=ReplyKeyboardMarkup(
             [["ХОЧУ ОПЛАТИТИ ОПЛАТИ СКАРБОВІ"]],
-            resize_keyboard=True,
-        ),
+            resize_keyboard=True
+        )
     )
 
 
@@ -196,7 +218,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(
             "Оберіть воєводство:",
-            reply_markup=make_keyboard(names, 2),
+            reply_markup=make_keyboard(names, 2)
         )
         return
 
@@ -219,10 +241,10 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "Резидент ЄС",
                     "Громадянство",
                     "Друк карти побиту",
-                    "Доручення",
+                    "Доручення"
                 ],
-                1,
-            ),
+                1
+            )
         )
         return
 
@@ -231,7 +253,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["step"] = "temporary_work"
             await update.message.reply_text(
                 "Чи по роботі?",
-                reply_markup=make_keyboard(["ТАК, по роботі", "НІ, не по роботі"], 1),
+                reply_markup=make_keyboard(["ТАК, по роботі", "НІ, не по роботі"], 1)
             )
             return
 
@@ -239,7 +261,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["step"] = "permanent_basis"
             await update.message.reply_text(
                 "Оберіть підставу:",
-                reply_markup=make_keyboard(["На підставі карти Поляка", "Без карти Поляка"], 1),
+                reply_markup=make_keyboard(["На підставі карти Поляка", "Без карти Поляка"], 1)
             )
             return
 
@@ -247,16 +269,14 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["step"] = "card_type"
             await update.message.reply_text(
                 "Оберіть тип карти:",
-                reply_markup=make_keyboard(["Карта CUKR", "Karta Pobytu tradycyjna (Nie CUKR)"], 1),
+                reply_markup=make_keyboard(["Карта CUKR", "Karta Pobytu tradycyjna (Nie CUKR)"], 1)
             )
             return
 
         if text in ["Резидент ЄС", "Громадянство", "Доручення"]:
             context.user_data["selected_payment"] = FINAL_PAYMENTS[text]
             context.user_data["step"] = "full_name"
-            await update.message.reply_text(
-                "Введіть ім’я та прізвище заявника ЛАТИНСЬКИМИ літерами.\nНаприклад: IVAN PETRENKO"
-            )
+            await update.message.reply_text("Введіть ім’я та прізвище заявника:")
             return
 
         await update.message.reply_text("Оберіть варіант з кнопок.")
@@ -276,25 +296,21 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         context.user_data["step"] = "full_name"
-        await update.message.reply_text(
-            "Введіть ім’я та прізвище заявника ЛАТИНСЬКИМИ літерами.\nНаприклад: IVAN PETRENKO"
-        )
+        await update.message.reply_text("Введіть ім’я та прізвище заявника:")
         return
 
     if step == "card_type":
         if text == "Карта CUKR":
             context.user_data["selected_payment"] = FINAL_PAYMENTS[text]
             context.user_data["step"] = "full_name"
-            await update.message.reply_text(
-                "Введіть ім’я та прізвище заявника ЛАТИНСЬКИМИ літерами.\nНаприклад: IVAN PETRENKO"
-            )
+            await update.message.reply_text("Введіть ім’я та прізвище заявника:")
             return
 
         if text == "Karta Pobytu tradycyjna (Nie CUKR)":
             context.user_data["step"] = "traditional_card_discount"
             await update.message.reply_text(
                 "Оберіть варіант:",
-                reply_markup=make_keyboard(["Повнолітня особа без пільг", "Пільгова оплата"], 1),
+                reply_markup=make_keyboard(["Повнолітня особа без пільг", "Пільгова оплата"], 1)
             )
             return
 
@@ -308,15 +324,14 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["selected_payment"] = FINAL_PAYMENTS[text]
         context.user_data["step"] = "full_name"
-        await update.message.reply_text(
-            "Введіть ім’я та прізвище заявника ЛАТИНСЬКИМИ літерами.\nНаприклад: IVAN PETRENKO"
-        )
+        await update.message.reply_text("Введіть ім’я та прізвище заявника:")
         return
 
     if step == "full_name":
+
         if not is_latin_name(text):
             await update.message.reply_text(
-                "⚠️ Введіть ім’я та прізвище тільки латинськими літерами.\nНаприклад: IVAN PETRENKO"
+                "⚠️ Введіть ім’я та прізвище латинськими літерами.\nНаприклад: IVAN PETRENKO"
             )
             return
 
@@ -329,6 +344,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if step == "birth_date":
+
         if not validate_birth_date(text):
             await update.message.reply_text(
                 "⚠️ Невірна дата народження.\nВведіть дату у форматі ДД.ММ.РРРР.\nНаприклад: 01.01.1990"
@@ -341,7 +357,7 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if selected.get("needs_proxy"):
             context.user_data["step"] = "proxy_name"
             await update.message.reply_text(
-                "Введіть ім’я та прізвище довіреної особи ЛАТИНСЬКИМИ літерами.\nНаприклад: ANNA KOWALSKA"
+                "Введіть ім’я та прізвище довіреної особи латинськими літерами.\nНаприклад: ANNA KOWALSKA"
             )
             return
 
@@ -349,11 +365,11 @@ async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data.clear()
         await update.message.reply_text(result)
         return
-
     if step == "proxy_name":
+
         if not is_latin_name(text):
             await update.message.reply_text(
-                "⚠️ Введіть ім’я та прізвище довіреної особи тільки латинськими літерами.\nНаприклад: ANNA KOWALSKA"
+                "⚠️ Введіть ім’я та прізвище довіреної особи латинськими літерами.\nНаприклад: ANNA KOWALSKA"
             )
             return
 
@@ -373,7 +389,7 @@ def build_result(data):
 
     if payment.get("free"):
         return f"""
-✅ Оплата не потрібна
+✅ Інформація
 
 Воєводство:
 {voivodeship["name_pl"]}
@@ -381,12 +397,10 @@ def build_result(data):
 Тип справи:
 {payment["label"]}
 
-📌 Сума оплати:
+Сума:
 0 zł
 
-Ця дія є безкоштовною.
-Не виконуйте переказ.
-Реквізити для оплати не потрібні.
+Ця дія є безкоштовною. Реквізити для оплати не потрібні.
 """
 
     route = get_route(voivodeship["voivodeship_id"], payment["payment_type_id"])
@@ -415,9 +429,9 @@ Payment type ID:
     title = payment["title"].format(
         full_name=data.get("full_name", ""),
         birth_date=data.get("birth_date", ""),
-        proxy_name=data.get("proxy_name", ""),
+        proxy_name=data.get("proxy_name", "")
     )
-
+    
     return f"""
 ✅ Дані для оплати готові
 
@@ -460,7 +474,6 @@ Payment type ID:
 
 ⚠️ Перед оплатою перевірте реквізити на офіційній сторінці ужонду.
 """
-
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
